@@ -1,0 +1,131 @@
+# ============================================================================
+#  CHRONOS BLADE: PIXEL LEGACY
+#  UNICO archivo que debes crear a mano en GitHub (copia y pega TODO esto):
+#
+#    Ruta exacta del archivo:  .github/workflows/chronos-blade.yml
+#
+#  En el repositorio solo hacen falta 2 cosas:
+#    1) El archivo  ChronosBlade-PixelLegacy-Fuente.zip  (subido tal cual, SIN descomprimir)
+#    2) Este archivo (Add file > Create new file > pega este contenido)
+#
+#  Luego:  Actions > "Chronos Blade" > Run workflow > elige la accion.
+#    - compilar-apk      : descomprime el ZIP en la nube y compila el APK de Android
+#    - activar-licencia  : genera el .alf para conseguir tu secreto UNITY_LICENSE (1 sola vez)
+#    - extraer-proyecto  : (opcional) copia el proyecto dentro del repositorio para verlo/editarlo
+# ============================================================================
+
+name: Chronos Blade
+
+on:
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: "Accion a ejecutar"
+        type: choice
+        default: compilar-apk
+        options:
+          - compilar-apk
+          - activar-licencia
+          - extraer-proyecto
+
+permissions:
+  contents: write
+
+env:
+  UNITY_VERSION: 2022.3.62f1
+
+jobs:
+  # ---------------------------------------------------------------- LICENCIA
+  activar-licencia:
+    if: github.event.inputs.accion == 'activar-licencia'
+    name: Generar archivo de activacion (.alf)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Solicitar el archivo de activacion
+        id: alf
+        uses: game-ci/unity-request-activation-file@v2
+        with:
+          unityVersion: 2022.3.62f1
+
+      - name: Publicar el .alf como artefacto descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Unity-Activation-File
+          path: ${{ steps.alf.outputs.filePath }}
+          retention-days: 7
+
+  # --------------------------------------------------------- EXTRAER AL REPO
+  extraer-proyecto:
+    if: github.event.inputs.accion == 'extraer-proyecto'
+    name: Extraer el proyecto dentro del repositorio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descomprimir el proyecto en la raiz del repositorio
+        run: unzip -o "ChronosBlade-PixelLegacy-Fuente.zip" -d .
+
+      - name: Confirmar los archivos extraidos
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git diff --cached --quiet && echo "No hay nada nuevo que extraer." || (git commit -m "Extraer proyecto Chronos Blade" && git push)
+
+  # ------------------------------------------------------------- COMPILAR APK
+  compilar-apk:
+    if: github.event.inputs.accion == 'compilar-apk'
+    name: Compilar APK (Unity 2022.3 LTS + Android)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descomprimir el proyecto
+        run: |
+          unzip -o "ChronosBlade-PixelLegacy-Fuente.zip" -d proyecto
+          ls -la proyecto
+
+      - name: Liberar espacio en disco (Android/IL2CPP necesita ~20 GB)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Cachear la carpeta Library de Unity
+        uses: actions/cache@v4
+        with:
+          path: proyecto/Library
+          key: Library-Android-${{ hashFiles('ChronosBlade-PixelLegacy-Fuente.zip') }}
+          restore-keys: |
+            Library-Android-
+            Library-
+
+      - name: Compilar el APK con Unity
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: proyecto
+          unityVersion: ${{ env.UNITY_VERSION }}
+          targetPlatform: Android
+          buildMethod: ChronosBlade.EditorTools.AndroidBuilder.BuildFromCI
+          allowDirtyBuild: true
+
+      - name: Publicar el APK como artefacto descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChronosBlade-APK
+          path: |
+            build/**/*.apk
+            **/*.apk
+          if-no-files-found: error
+          retention-days: 30
