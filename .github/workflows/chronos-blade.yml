@@ -1,0 +1,72 @@
+name: Compilar APK (Chronos Blade - Web)
+
+# =====================================================================
+#  CHRONOS BLADE: PIXEL LEGACY  ->  APK DE ANDROID SIN LICENCIA
+# ---------------------------------------------------------------------
+#  Este workflow NO necesita: licencia de Unity, cuenta de Unity,
+#  secretos, contraseñas ni keystore. La firma la hace GitHub con la
+#  clave de depuracion (debug) que genera Android por si solo.
+#
+#  Como usarlo: pestana "Actions" -> "Compilar APK (Chronos Blade - Web)"
+#  -> boton "Run workflow" -> esperar ~3-5 minutos -> el APK queda en:
+#     * la carpeta "apk/" del repositorio (descarga directa, ideal movil)
+#     * "Actions" -> la ejecucion -> Artifacts -> ChronosBlade-APK-Web
+# =====================================================================
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-chronos-blade
+  cancel-in-progress: false
+
+env:
+  ZIP_JUEGO: ChronosBlade-PixelLegacy-WebAPK-Fuente.zip
+  CORDOVA_VERSION: "13.0.0"
+  CORDOVA_ANDROID_VERSION: "15.1.0"
+  GRADLE_VERSION: "8.14.2"
+
+jobs:
+  compilar-apk:
+    name: Compilar APK de Chronos Blade
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      # ---------- 1. Codigo fuente ----------
+      - name: 1) Descargar el repositorio
+        uses: actions/checkout@v4
+
+      # ---------- 2. Herramientas ----------
+      - name: 2) Instalar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 3) Instalar Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: 4) Preparar el Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 5) Instalar Gradle y la plataforma Android 36
+        run: |
+          set -e
+          SDKM="$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")"
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" "platforms;android-36" "build-tools;36.0.0" > /dev/null
+          curl -sSL -o "$RUNNER_TEMP/gradle.zip" \
+            "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/gradle-${GRADLE_VERSION}/bin/gradle" --version | head -5
+
+      # ---------- 3. Proyecto Cordova ----------
+      - name: 6) Descomprimir el ZIP del juego
+        run: |
